@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ascension System 2026 (Manual Mode)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#00d4ff">
+
+    <style>
+        :root { --primary: #00d4ff; --bg-dark: #0e1117; --panel-bg: rgba(20, 30, 50, 0.8); --text-light: #e0ffff; }
+        body { background-color: var(--bg-dark); color: var(--text-light); font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        #sidebar { width: 300px; background: rgba(10,14,20,0.95); border-right: 1px solid var(--primary); padding: 2rem; display: flex; flex-direction: column; gap: 1rem; }
+        #main-content { flex: 1; padding: 2rem; overflow-y: auto; }
+        .tech-panel { background: var(--panel-bg); border: 1px solid var(--primary); border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .action-btn { width: 100%; padding: 1rem; background: transparent; border: 2px solid var(--primary); color: var(--primary); cursor: pointer; margin-top: 10px; }
+        .action-btn:disabled { border-color: #555; color: #555; cursor: not-allowed; }
+        .action-btn:hover:not(:disabled) { background: var(--primary); color: #000; }
+        input { width: 100%; padding: 10px; background: #222; border: 1px solid var(--primary); color: white; }
+        .metric-val { font-size: 2rem; font-weight: bold; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .chart-box { position: relative; height: 300px; width: 100%; }
+        textarea { width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js")
+    .then(() => console.log("Service Worker Registered"))
+    .catch(err => console.error("SW registration failed", err));
+}
+</script>
+
+
+    <div id="sidebar">
+        <h2>System Login</h2>
+        <input type="text" id="username" placeholder="Codename">
+        <button class="action-btn" onclick="login()">Initialize</button>
+        <div id="statusArea" style="margin-top: auto; font-size: 0.8rem; color: #888;">AI Module: Removed</div>
+    </div>
+
+    <div id="main-content" style="display:none;">
+        <div class="tech-panel" style="text-align:center;">
+            <h1>🔥 Ascension System 2026</h1>
+            <p>Phase: <span id="phaseDisplay" style="color:var(--primary)">...</span> | Day: <span id="dayDisplay">...</span></p>
+        </div>
+
+        <div class="tabs">
+            <button class="action-btn" onclick="showTab('dash')">Dashboard</button>
+            <button class="action-btn" onclick="showTab('journal')">Journal</button>
+            <button class="action-btn" onclick="showTab('stats')">Analytics</button>
+        </div>
+
+        <div id="dash" class="tab-content active">
+            <div class="tech-panel">
+                <div style="display:flex; justify-content: space-around; text-align: center;">
+                    <div>Level<br><span id="lvl" class="metric-val">1</span></div>
+                    <div>XP<br><span id="xp" class="metric-val">0</span></div>
+                    <div>Gym Sets<br><span id="gymSets" class="metric-val" style="color:#ff4444">3</span></div>
+                </div>
+            </div>
+
+            <div class="tech-panel">
+                <h3>📅 Today's Protocol</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                    <div style="border:1px solid #007bff; padding:10px;">
+                        <h4>Academic</h4>
+                        <div id="taskAcademic">...</div>
+                        <button id="btn-academic" class="action-btn" onclick="completeTask('academic')">Complete</button>
+                    </div>
+                    <div style="border:1px solid #00ff88; padding:10px;">
+                        <h4>Skill</h4>
+                        <div id="taskSkill">...</div>
+                        <button id="btn-skill" class="action-btn" onclick="completeTask('skill')">Complete</button>
+                    </div>
+                    <div style="border:1px solid #ff4444; padding:10px;">
+                        <h4>Workout</h4>
+                        <div id="taskWorkout">...</div>
+                        <button id="btn-workout" class="action-btn" onclick="completeTask('workout')">Complete</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="journal" class="tab-content">
+            <div class="tech-panel">
+                <h3>📝 Daily Reflection</h3>
+                <p>Log your progress manually. What did you learn? What was difficult?</p>
+                <textarea id="reflectionNote" rows="6" placeholder="Write your daily summary here..."></textarea>
+                <button id="btn-reflect" class="action-btn" onclick="submitReflection()">Save Entry (+20 XP)</button>
+            </div>
+        </div>
+
+        <div id="stats" class="tab-content">
+            <div class="tech-panel">
+                <h3>XP Growth</h3>
+                <div class="chart-box"><canvas id="xpChart"></canvas></div>
+            </div>
+            <div class="tech-panel">
+                <h3>Journal Consistency</h3>
+                <div class="chart-box"><canvas id="consistencyChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+        let currentUser = "";
+        let currentData = {};
+
+        const ACADEMIC_MAP = {
+            "Monday": "Embedded Systems", "Tuesday": "Machine Learning",
+            "Wednesday": "Data Mining", "Thursday": "Digital Forensics",
+            "Friday": "EDA", "Saturday": "Labs", "Sunday": "Revision"
+        };
+        const GYM_MAP = {
+            "Monday": "PUSH", "Tuesday": "LEGS", "Wednesday": "REST",
+            "Thursday": "PULL", "Friday": "CORE", "Saturday": "ACTIVE", "Sunday": "REST"
+        };
+        const SKILL_PHASES = ["Foundation", "Core Skills", "Web & ML", "Polish"];
+        const SKILL_TOPICS = [
+            ["Python", "Arrays", "Git"], ["OOP", "SQL", "Linked Lists"],
+            ["React", "FastAPI", "ML Models"], ["Projects", "System Design"]
+        ];
+
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            if(!username) return alert("Enter username");
+            
+            const res = await fetch(`${API_URL}/login`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username})
+            });
+            
+            if(res.ok) {
+                currentUser = username;
+                document.getElementById('sidebar').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                loadDashboard();
+            }
+        }
+
+        async function loadDashboard() {
+            const res = await fetch(`${API_URL}/dashboard/${currentUser}`);
+            const data = await res.json();
+            currentData = data;
+
+            // Stats
+            document.getElementById('lvl').innerText = data.user.level;
+            document.getElementById('xp').innerText = `${data.user.xp} / ${data.user.xp_limit}`;
+            document.getElementById('gymSets').innerText = data.progression.gym_sets;
+            document.getElementById('phaseDisplay').innerText = SKILL_PHASES[data.progression.phase_index];
+            document.getElementById('dayDisplay').innerText = `Day ${data.progression.days_passed}`;
+
+            // Tasks
+            const dateObj = new Date(data.progression.date_str);
+            const dayName = dateObj.toLocaleDateString('en-US', {weekday: 'long'});
+            
+            document.getElementById('taskAcademic').innerText = ACADEMIC_MAP[dayName];
+            document.getElementById('taskWorkout').innerText = GYM_MAP[dayName];
+            
+            const phaseIdx = data.progression.phase_index;
+            const topicList = SKILL_TOPICS[phaseIdx];
+            const topic = topicList[data.progression.days_passed % topicList.length];
+            document.getElementById('taskSkill').innerText = topic;
+
+            // Locks
+            updateButtonLock('btn-academic', data.locks.academic);
+            updateButtonLock('btn-skill', data.locks.skill);
+            updateButtonLock('btn-workout', data.locks.workout);
+            updateButtonLock('btn-reflect', data.locks.reflection);
+
+            loadAnalytics();
+        }
+
+        function updateButtonLock(id, isLocked) {
+            const btn = document.getElementById(id);
+            if(isLocked) {
+                btn.disabled = true;
+                btn.innerText = "Done";
+                btn.style.borderColor = "#555";
+            } else {
+                btn.disabled = false;
+                btn.innerText = "Complete";
+                btn.style.borderColor = "var(--primary)";
+            }
+        }
+
+        async function completeTask(type) {
+            const res = await fetch(`${API_URL}/complete-task`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username: currentUser, action_type: type})
+            });
+            if(res.ok) loadDashboard();
+            else alert("Error or already completed");
+        }
+
+        async function submitReflection() {
+            const note = document.getElementById('reflectionNote').value;
+            if(!note) return alert("Please write something.");
+
+            const ac = document.getElementById('taskAcademic').innerText;
+            const sk = document.getElementById('taskSkill').innerText;
+
+            await fetch(`${API_URL}/submit-reflection?username=${currentUser}`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    date: currentData.progression.date_str,
+                    academic_topic: ac,
+                    skill_topic: sk,
+                    user_notes: note
+                })
+            });
+
+            alert("Journal Entry Saved.");
+            loadDashboard();
+        }
+
+        async function loadAnalytics() {
+            const res = await fetch(`${API_URL}/analytics/${currentUser}`);
+            const data = await res.json();
+            if(!data.xp_chart) return;
+
+            renderChart('xpChart', 'XP History', data.xp_chart.labels, data.xp_chart.data, '#00d4ff');
+            // Replaced Quiz Score chart with Consistency (Bar chart showing 1s)
+            renderBarChart('consistencyChart', 'Journal Entries', data.consistency_chart.labels, data.consistency_chart.data, '#00ff88');
+        }
+
+        function renderChart(canvasId, label, labels, data, color) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if(window[canvasId] instanceof Chart) window[canvasId].destroy();
+            
+            window[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: color,
+                        tension: 0.1
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function renderBarChart(canvasId, label, labels, data, color) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if(window[canvasId] instanceof Chart) window[canvasId].destroy();
+            
+            window[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        backgroundColor: color
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: { y: { ticks: { stepSize: 1 } } }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
